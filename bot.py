@@ -324,9 +324,10 @@ async def cmd_broadcast(message: Message):
     await mass_send(text)
     await message.answer("Рассылка завершена.")
 
-# === Run ===
+# === RUN ===
 async def main():
-    await dp.start_polling()
+    # передаём bot как минимум один instance
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
