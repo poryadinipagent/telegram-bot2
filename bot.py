@@ -30,8 +30,8 @@ DISTRICTS = {
     "spb":       ["Адмиралтейский", "Василеостровский", "Московский", "Невский", "Приморский", "Калининский"],
 }
 
-bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp  = Dispatcher(bot)
+bot = Bot(token=TOKEN, default=...)
+dp  = Dispatcher() 
 
 CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS users (
