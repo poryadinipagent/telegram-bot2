@@ -36,26 +36,24 @@ bot = Bot(
     token=TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
-dp = Dispatcher()  # без аргументов!
-
+dp = Dispatcher()  # aiogram 3.x: no positional args
 
 # === Database helpers ===
 CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS users (
-  user_id    INTEGER PRIMARY KEY,
-  name       TEXT,
-  goal       TEXT,
-  property   TEXT,
-  city       TEXT,
-  district   TEXT,
-  mortgage   TEXT,
-  handover   TEXT,
-  finishing  TEXT,
-  phone      TEXT,
-  created_at TEXT
+    user_id    INTEGER PRIMARY KEY,
+    name       TEXT,
+    goal       TEXT,
+    property   TEXT,
+    city       TEXT,
+    district   TEXT,
+    mortgage   TEXT,
+    handover   TEXT,
+    finishing  TEXT,
+    phone      TEXT,
+    created_at TEXT
 );
 """
-
 async def get_db():
     conn = await aiosqlite.connect(DB_PATH)
     await conn.execute(CREATE_TABLE)
@@ -64,14 +62,14 @@ async def get_db():
 
 async def upsert_user(uid: int, **fields):
     conn = await get_db()
-    # вставка новой записи, если её нет
+    # insert if not exists
     await conn.execute(
-        "INSERT OR IGNORE INTO users(user_id,created_at) VALUES(?,?)",
+        "INSERT OR IGNORE INTO users(user_id, created_at) VALUES(?,?)",
         (uid, datetime.utcnow().isoformat())
     )
     if fields:
-        cols  = ", ".join(f"{k}=?" for k in fields)
-        vals  = list(fields.values()) + [uid]
+        cols = ", ".join(f"{k}=?" for k in fields)
+        vals = list(fields.values()) + [uid]
         await conn.execute(f"UPDATE users SET {cols} WHERE user_id=?", vals)
     await conn.commit()
     await conn.close()
@@ -85,178 +83,176 @@ async def iterate_users():
 
 async def get_user_count():
     conn = await get_db()
-    cur  = await conn.execute("SELECT COUNT(*) FROM users")
-    (cnt,) = await cur.fetchone()
+    cur = await conn.execute("SELECT COUNT(*) FROM users")
+    (count,) = await cur.fetchone()
     await conn.close()
-    return cnt
+    return count
 
 async def mass_send(text: str, markup=None):
     async for uid in iterate_users():
         try:
             await bot.send_message(uid, text, reply_markup=markup)
         except:
-            pass
-
+            continue
 
 # === Handlers ===
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
     await upsert_user(uid, name=message.from_user.full_name)
-
     member = await bot.get_chat_member(CHANNEL_USERNAME, uid)
     if member.status not in ("member", "creator", "administrator"):
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
                 text="➡️ Подписаться на канал",
                 url=f"https://t.me/{CHANNEL_USERNAME[1:]}"
-            )
-        ]])
+            )]
+        ])
         await message.answer(
             "👋 Добро пожаловать! Чтобы начать, подпишитесь на наш канал.",
             reply_markup=kb
         )
         return
-
-    # Если подписан
     await ask_goal(message)
-
 
 async def ask_goal(message: Message):
     kb = InlineKeyboardBuilder()
-    kb.button("🏡 Для проживания", callback_data="goal_live")
-    kb.button("💼 Для инвестиций", callback_data="goal_invest")
+    kb.button(text="🏡 Для проживания", callback_data="goal_live")
+    kb.button(text="💼 Для инвестиций", callback_data="goal_invest")
     await message.answer(
         "Вы рассматриваете недвижимость для жизни или в качестве инвестиции?",
         reply_markup=kb.as_markup()
     )
 
-
 @dp.callback_query(F.data.startswith("goal_"))
 async def handle_goal(cb: CallbackQuery):
-    goal = cb.data.split("_",1)[1]
+    goal = cb.data.split("_", 1)[1]
     await upsert_user(cb.from_user.id, goal=goal)
-
     kb = InlineKeyboardBuilder()
     for lbl, code in [
-        ("1-комнатная","1"),
-        ("2-комнатная","2"),
-        ("3-комнатная","3"),
-        ("🏠 Дом","house"),
-        ("Студия","studio")
+        ("1-комнатная", "1"),
+        ("2-комнатная", "2"),
+        ("3-комнатная", "3"),
+        ("🏠 Дом",       "house"),
+        ("Студия",      "studio")
     ]:
-        kb.button(lbl, callback_data=f"type_{code}")
-
-    await cb.message.answer("Какой тип объекта Вас интересует?", reply_markup=kb.as_markup())
+        kb.button(text=lbl, callback_data=f"type_{code}")
+    await cb.message.answer(
+        "Какой тип объекта Вас интересует?",
+        reply_markup=kb.as_markup()
+    )
     await cb.answer()
-
 
 @dp.callback_query(F.data.startswith("type_"))
 async def handle_type(cb: CallbackQuery):
-    prop = cb.data.split("_",1)[1]
+    prop = cb.data.split("_", 1)[1]
     await upsert_user(cb.from_user.id, property=prop)
-
     kb = InlineKeyboardBuilder()
     for city in DISTRICTS:
-        label = city.upper() if city=="spb" else city.capitalize()
-        kb.button(label, callback_data=f"city_{city}")
-
-    await cb.message.answer("Выберите город / регион:", reply_markup=kb.as_markup())
+        label = city.upper() if city == "spb" else city.capitalize()
+        kb.button(text=label, callback_data=f"city_{city}")
+    await cb.message.answer(
+        "Выберите город / регион:",
+        reply_markup=kb.as_markup()
+    )
     await cb.answer()
-
 
 @dp.callback_query(F.data.startswith("city_"))
 async def handle_city(cb: CallbackQuery):
-    city = cb.data.split("_",1)[1]
+    city = cb.data.split("_", 1)[1]
     await upsert_user(cb.from_user.id, city=city)
-
     kb = InlineKeyboardBuilder()
     for d in DISTRICTS.get(city, []):
         key = d.replace(" ", "_").lower()
-        kb.button(d, callback_data=f"district_{key}")
-
-    await cb.message.answer("Уточните район:", reply_markup=kb.as_markup())
+        kb.button(text=d, callback_data=f"district_{key}")
+    await cb.message.answer(
+        "Уточните район:",
+        reply_markup=kb.as_markup()
+    )
     await cb.answer()
-
 
 @dp.callback_query(F.data.startswith("district_"))
 async def handle_district(cb: CallbackQuery):
-    district = cb.data.split("_",1)[1]
+    district = cb.data.split("_", 1)[1]
     await upsert_user(cb.from_user.id, district=district)
-
     kb = InlineKeyboardBuilder()
-    kb.button("👨‍👩‍👧 Семейная ипотека – да", callback_data="family_yes")
-    kb.button("❌ Нет семейной",          callback_data="family_no")
-    await cb.message.answer("Рассматриваете ли Вы семейную ипотеку?", reply_markup=kb.as_markup())
+    kb.button(text="👨‍👩‍👧 Семейная ипотека – да", callback_data="family_yes")
+    kb.button(text="❌ Нет семейной",          callback_data="family_no")
+    await cb.message.answer(
+        "Рассматриваете ли Вы семейную ипотеку? (ребёнок до 7 лет или двое несовершеннолетних)",
+        reply_markup=kb.as_markup()
+    )
     await cb.answer()
-
 
 @dp.callback_query(F.data.startswith("family_"))
 async def handle_family(cb: CallbackQuery):
-    ch  = cb.data.split("_",1)[1]
-    val = "family" if ch=="yes" else "no_family"
+    choice = cb.data.split("_", 1)[1]
+    val = "family" if choice == "yes" else "no_family"
     await upsert_user(cb.from_user.id, mortgage=val)
-
-    if ch == "no":
+    if choice == "no":
         kb = InlineKeyboardBuilder()
-        kb.button("🏖 Побережье КК",    callback_data="install_coast")
-        kb.button("🏙 Краснодар",       callback_data="install_krasnodar")
-        await cb.message.answer("Доступна рассрочка. Выберите локацию:", reply_markup=kb.as_markup())
+        kb.button(text="🏖 Побережье КК",    callback_data="install_coast")
+        kb.button(text="🏙 Краснодар",       callback_data="install_krasnodar")
+        await cb.message.answer(
+            "Тогда доступна рассрочка. Выберите локацию:",
+            reply_markup=kb.as_markup()
+        )
     else:
         await ask_handover(cb.message)
-
     await cb.answer()
-
 
 @dp.callback_query(F.data.startswith("install_"))
 async def handle_install(cb: CallbackQuery):
-    loc = cb.data.split("_",1)[1]
+    loc = cb.data.split("_", 1)[1]
     await upsert_user(cb.from_user.id, mortgage=f"install_{loc}")
     await ask_handover(cb.message)
     await cb.answer()
 
-
 async def ask_handover(message: Message):
     kb = InlineKeyboardBuilder()
-    kb.button("🏢 Только сданные", callback_data="hd_now")
-    kb.button("⏳ Готов ждать",     callback_data="hd_wait")
-    await message.answer("Важно ли, чтобы дом уже сдан?", reply_markup=kb.as_markup())
-
+    kb.button(text="🏢 Только сданные", callback_data="hd_now")
+    kb.button(text="⏳ Готов ждать",     callback_data="hd_wait")
+    await message.answer(
+        "Важно ли, чтобы дом уже сдан?",
+        reply_markup=kb.as_markup()
+    )
 
 @dp.callback_query(F.data.startswith("hd_"))
 async def handle_handover(cb: CallbackQuery):
-    hl = cb.data.split("_",1)[1]
-    await upsert_user(cb.from_user.id, handover=hl)
-
+    val = cb.data.split("_", 1)[1]
+    await upsert_user(cb.from_user.id, handover=val)
     kb = InlineKeyboardBuilder()
-    kb.button("🔨 С ремонтом", callback_data="finish_ready")
-    kb.button("🛠 Подчистовая", callback_data="finish_grey")
-    await cb.message.answer("В каком состоянии предпочитаете жилье?", reply_markup=kb.as_markup())
+    kb.button(text="🔨 С ремонтом", callback_data="finish_ready")
+    kb.button(text="🛠 Подчистовая", callback_data="finish_grey")
+    await cb.message.answer(
+        "В каком состоянии предпочитаете жилье?",
+        reply_markup=kb.as_markup()
+    )
     await cb.answer()
-
 
 @dp.callback_query(F.data.startswith("finish_"))
 async def handle_finish(cb: CallbackQuery):
-    fs = cb.data.split("_",1)[1]
-    await upsert_user(cb.from_user.id, finishing=fs)
-
+    val = cb.data.split("_", 1)[1]
+    await upsert_user(cb.from_user.id, finishing=val)
     kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton("📱 Оставить номер", request_contact=True)]],
-        resize_keyboard=True, one_time_keyboard=True
+        keyboard=[[KeyboardButton(text="📱 Оставить номер", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
     )
-    await cb.message.answer("Пожалуйста, оставьте ваш номер телефона:", reply_markup=kb)
+    await cb.message.answer(
+        "Пожалуйста, оставьте ваш номер телефона:",
+        reply_markup=kb
+    )
     await cb.answer()
-
 
 @dp.message(F.contact)
 async def handle_contact(msg: Message):
     await upsert_user(msg.from_user.id, phone=msg.contact.phone_number)
-
+    # Fetch stored data
     conn = await get_db()
-    cur  = await conn.execute("SELECT * FROM users WHERE user_id=?", (msg.from_user.id,))
-    row  = await cur.fetchone()
+    cur = await conn.execute("SELECT * FROM users WHERE user_id=?", (msg.from_user.id,))
+    row = await cur.fetchone()
     await conn.close()
-
     parts = [
         f"Цель: {row[2]}",
         f"Тип: {row[3]}",
@@ -267,32 +263,33 @@ async def handle_contact(msg: Message):
         f"Отделка: {row[8]}",
         f"Телефон: {row[9]}"
     ]
-
-    # уведомление администратору
-    await bot.send_message(ADMIN_ID, "📩 Заявка получена!\n" + "\n".join(parts))
-
-    # выдача PDF
+    # Notify admin
+    await bot.send_message(
+        ADMIN_ID,
+        "📩 Заявка получена!\n" + "\n".join(parts)
+    )
+    # Send PDF
     if os.path.exists(PDF_FILE_PATH):
         await msg.answer_document(
             FSInputFile(PDF_FILE_PATH),
             caption="Выдача самого топового предложения на побережье с ПВ от 600 000 ₽"
         )
-
-    await msg.answer("Спасибо! Наш специалист свяжется с Вами. ✨", reply_markup=types.ReplyKeyboardRemove())
-
+    await msg.answer(
+        "Спасибо! Наш специалист свяжется с Вами. ✨",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
 
 @dp.message()
 async def smart_replies(message: Message):
     t = message.text.lower()
-    if any(k in t for k in ("море","побережье")):
+    if any(k in t for k in ("море", "побережье")):
         await message.answer("🏖 Отличные варианты на побережье! Напишите, какой формат интересует.")
-    elif any(k in t for k in ("цена","стоимость")):
+    elif any(k in t for k in ("цена", "стоимость")):
         await message.answer("💰 Уточните параметры – и мы подберем лучшие предложения.")
-    elif any(k in t for k in ("ипотек","рассроч")):
+    elif any(k in t for k in ("ипотек", "рассроч")):
         await message.answer("🏦 Предлагаем семейную ипотеку и рассрочку под ваш бюджет.")
     else:
         await message.answer("🤝 Спасибо за сообщение! Ответим в ближайшее время.")
-
 
 # === Scheduled tasks ===
 @crontab("0 12 */2 * *")
@@ -301,13 +298,12 @@ async def scheduled_warmup():
 
 @crontab("0 9 * * 1")
 async def weekly_news():
-    feed  = feedparser.parse(NEWS_FEED)
+    feed = feedparser.parse(NEWS_FEED)
     items = feed.entries[:3]
-    text  = "📰 Еженедельный дайджест новостей рынка недвижимости:\n"
+    text = "📰 Еженедельный дайджест новостей рынка недвижимости:\n"
     for e in items:
         text += f'- <a href="{e.link}">{e.title}</a>\n'
     await mass_send(text)
-
 
 # === Admin commands ===
 @dp.message(Command("stats"))
@@ -323,16 +319,14 @@ async def cmd_broadcast(message: Message):
         return
     text = message.text.partition(" ")[2]
     if not text:
-        await message.answer("Использование: /broadcast <текст>")
+        await message.answer("Использование: /broadcast текст")
         return
     await mass_send(text)
     await message.answer("Рассылка завершена.")
 
-
 # === Run ===
 async def main():
-    await dp.start_polling(bot)
+    await dp.start_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
     asyncio.run(main())
