@@ -234,9 +234,10 @@ async def handle_contact(msg: Message):
     row = await cur.fetchone()
     await conn.close()
     parts = [f"Цель: {row[2]}", f"Тип: {row[3]}", f"Город: {row[4]}", f"Район: {row[5]}", f"Ипотека: {row[6]}", f"Сдача: {row[7]}", f"Отделка: {row[8]}", f"Телефон: {row[9]}"]
-    await bot.send_message(ADMIN_ID, "📩 Заявка получили!")
-" + "
-".join(parts))
+     await bot.send_message(
+        ADMIN_ID,
+        "📩 Заявка получена!\n" + "\n".join(parts)
+    )
     if os.path.exists(PDF_FILE_PATH):
         await msg.answer_document(FSInputFile(PDF_FILE_PATH), caption="Выдача самого топового предложения на побережье с ПВ от 600 тысяч рублей")
     await msg.answer("Спасибо! Наш специалист свяжется с Вами. ✨", reply_markup=types.ReplyKeyboardRemove())
@@ -262,11 +263,9 @@ async def scheduled_warmup():
 async def weekly_news():
     feed = feedparser.parse(NEWS_FEED)
     items = feed.entries[:3]
-    text = "📰 Еженедельный дайджест новостей рынка недвижимости:
-"
+    text = "📰 Еженедельный дайджест новостей рынка недвижимости:\n"
     for e in items:
-        text += f"- <a href="{e.link}">{e.title}</a>
-"
+        text += f'- <a href="{e.link}">{e.title}</a>\n'
     await mass_send(text)
 
 @dp.message(Command("stats"))
