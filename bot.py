@@ -236,7 +236,7 @@ async def handle_contact(msg: Message):
     parts = [f"Цель: {row[2]}", f"Тип: {row[3]}", f"Город: {row[4]}", f"Район: {row[5]}", f"Ипотека: {row[6]}", f"Сдача: {row[7]}", f"Отделка: {row[8]}", f"Телефон: {row[9]}"]
     await bot.send_message(ADMIN_ID, "📩 Заявка получили!")
 " + "
-".join(parts)
+".join((parts))
     if os.path.exists(PDF_FILE_PATH):
         await msg.answer_document(FSInputFile(PDF_FILE_PATH), caption="Выдача самого топового предложения на побережье с ПВ от 600 тысяч рублей")
     await msg.answer("Спасибо! Наш специалист свяжется с Вами. ✨", reply_markup=types.ReplyKeyboardRemove())
